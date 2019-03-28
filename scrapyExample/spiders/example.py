@@ -11,7 +11,7 @@ class ExampleSpider(scrapy.Spider):
 	        
 	name = 'example'
 	allowed_domains = ['nga.cn']
-	start_urls = ['https://bbs.nga.cn/read.php?tid=16766611&_ff=-7']
+	start_urls = ['https://bbs.nga.cn/thread.php?fid=-7']
 	request_cookies = {'guestJs':'1553150682',
 										'ngaPassportUid':'38669789',
 										'ngaPassportUrlencodedUname':'Bazinga_93',
@@ -27,61 +27,71 @@ class ExampleSpider(scrapy.Spider):
 	
 	      
 	def thread_prase(self, response):
-		print(response.url)
 		#with open('example','w+') as f:
-		#	f.write(response.body.decode('gbk'))
+		#	f.write(response.body)
 		for each in response.xpath('//table/tbody'):
 			item = ngaItem()
 			item['topic'] = each.xpath('tr/td[@class="c2"]/a/text()').extract_first()
 			item['link'] = each.xpath('tr/td[@class="c2"]/a/@href').extract_first()
 			item['replies'] = each.xpath('tr/td[@class="c1"]/a/text()').extract_first()
 			item['id'] = each.xpath('tr/td[@class="c3"]/span/text()').extract_first()
+			item['page'] = 0
 			item['context'] = [] 
+			item['mainFloor'] = u''
 			#print item
 			self.ngaItems.update({item['id']:item})
 			replyPage = response.urljoin(item['link'])
 			id = each.xpath('tr/td[@class="c3"]/span/text()').extract_first()
 			if item['replies'] > 0:
 				yield scrapy.Request(replyPage,headers=self.request_headers,cookies=self.request_cookies,callback=self.read_prase, meta={'id': id})
-			return self.ngaItems
 		#print(self.ngaItems)
 	
 	def read_prase(self, response):
 		id = response.meta['id']
-		with open('example','w+') as f:
-			f.write(response.body.decode('gbk'))
-		next_page = response.xpath('//div[@id="pagebbtm"]/a[@class="pager_spacer"]/@href').extract()
-		if len(''.join(next_page)) > 1:
-			yield scrapy.Request(response.urljoin(''.join(next_page)),headers=self.request_headers,cookies=self.request_cookies,callback=self.read_prase, meta={'id': 0})
-		replyList = []
+		#with open('example','w+') as f:
+		#	f.write(response.body)
+		topicItem = self.ngaItems[id]	
+		replyList = topicItem['context']
+		page = topicItem['page']
+		mainFloor = response.xpath('//p[@id="postcontent0"]/text()').extract_first()
+		if mainFloor != None :
+			topicItem['mainFloor'] = mainFloor
 		for each in response.xpath('//table[@class="forumbox postbox"]'):
 			context = each.xpath('tr/td[@class="c2"]//span[@class="postcontent ubbcode"]').extract_first()
 			if context != None:
 				context = str(context).decode('utf8')
 				item = {'context':context,'quote':None,'b':None,'reply':None,'img':None}
-				img = re.findall(r'\[img\](.*)\[/img\]',context)
-				context = re.sub('\[img\]Reply.*\[/img\]','',context)
+				imgList = context.split('[img]') #re.findall(r'\[img\]h|\.(.*)\[/img\]',context)
+				if len(imgList) > 1:
+					img = imgList
+				else:
+					img = []
+				context = re.sub('\[img\].*\[/img\]','',context)
 				quote = re.findall(r'\[quote\](.*)\[/quote\]',context)
 				context = re.sub(r'\[quote\](.*)\[/quote\]','',context)
-				context = re.sub('\[b\]Reply.*\[/b\]','',context)
+				context = re.sub('\[b\].*\[/b\]','',context)
 				reply = (re.findall(r'>.*</span>',context)[0]).replace('</span>','').replace('>','',1)
 				item.update({'reply':reply})
 				item.update({'quote':quote})
 				item.update({'img':img})
 				replyList.append(item)
-		topicItem = ngaItem() #self.ngaItems[id]
-		topicItem['context'] = replyList
+		topicItem['page'] = page + 1
 		self.ngaItems.update({id:topicItem})
-		#return topicItem
+		next_page = response.xpath(u"//div[@id='pagebbtm']/a[@title='下一页']/@href").extract()
+		if len(''.join(next_page)) > 1 and page < 20:
+			return scrapy.Request(response.urljoin(''.join(next_page)),headers=self.request_headers,cookies=self.request_cookies,callback=self.read_prase, meta={'id': id})
+		else:
+			return topicItem
 		
 		
 	      
 	def parse(self, response):
-	  currentUrl = response.url
-	  if re.match('.*thread.*',currentUrl):
-	 		yield scrapy.Request(response.url,headers=self.request_headers,cookies=self.request_cookies,callback=self.thread_prase)	  
-	  if re.match('.*read.*',currentUrl):
-	 		yield scrapy.Request(response.url,headers=self.request_headers,cookies=self.request_cookies,callback=self.read_prase)	  
+		currentUrl = response.url
+		if re.match('.*thread.*',currentUrl):
+			yield scrapy.Request(response.url,headers=self.request_headers,cookies=self.request_cookies,callback=self.thread_prase)	  
+		if re.match('.*read.*',currentUrl):
+			yield scrapy.Request(response.url,headers=self.request_headers,cookies=self.request_cookies,callback=self.read_prase)	 
+		
 	  
 
     

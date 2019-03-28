@@ -17,4 +17,6 @@ class ngaItem(scrapy.Item):
     id = scrapy.Field()
     replies = scrapy.Field()
     context = scrapy.Field()
+    page = scrapy.Field()
+    mainFloor = scrapy.Field()
    
